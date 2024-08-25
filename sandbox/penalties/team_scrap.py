@@ -1,7 +1,6 @@
 import re
 import requests
 from bs4 import BeautifulSoup as bs
-import time
 import logging
 from threading import Thread
 
@@ -54,29 +53,5 @@ def get_player_data(player_id: int):
     return (player_name, pk_data[0], pk_data[1])
 
 
-def get_players_data(first_id: int, last_id: int, players_last_digit_id: int):
-    first_id = 1
-    last_id = 100000
-    
-    for k in range((first_id - first_id % 10 + players_last_digit_id),last_id, 10):
-        try:
-            print(f"fetching player {k}")
-    
-            player_name, pk1, pk2 = get_player_data(k)
-            logger.info(f"{player_name},{pk1},{pk2}")
 
-            time.sleep(0.001)
-        except KeyError:
-            time.sleep(0.001)
-
-
-threads = []
-for t_id in range(0, 10):
-    t = Thread(target=get_players_data, args=(first_id, last_id, t_id,))
-    threads.append(t)
-    t.start()
-
-# wait for the threads to complete
-for t in threads:
-    t.join()
 
