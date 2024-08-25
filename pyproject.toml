@@ -1,16 +1,19 @@
 [tool.poetry]
-name = "sandbox"
+name = "estimacionbayesiana"
 version = "0.1.0"
 description = ""
-authors = ["a"]
+authors = ["a <a@a.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-requests = "^2.32.3"
-beautifulsoup4 = "^4.12.3"
-html5lib = "^1.1"
+matplotlib = "^3.9.2"
+numpy = "^2.1.0"
+pandas = "^2.2.2"
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
 
 [build-system]
 requires = ["poetry-core"]
