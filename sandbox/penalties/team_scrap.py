@@ -1,18 +1,6 @@
 import re
 import requests
 from bs4 import BeautifulSoup as bs
-import logging
-from threading import Thread
-
-logpath = "db.csv"
-logger = logging.getLogger('log')
-logger.setLevel(logging.INFO)
-ch = logging.FileHandler(logpath)
-ch.setFormatter(logging.Formatter('%(message)s'))
-logger.addHandler(ch)
-first_id = 1
-last_id = 100000
-
 
 def get_player_page(player_id: int):
 
@@ -49,6 +37,8 @@ def get_player_data(player_id: int):
             pk_data[index] = int(match.group(1))
         else:
             print("pk element text match no found")
+
+    player_name = re.sub(r'^#?\d+', '', player_name)
 
     return (player_name, pk_data[0], pk_data[1])
 
