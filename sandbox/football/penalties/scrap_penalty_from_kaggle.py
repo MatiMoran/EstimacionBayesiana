@@ -19,7 +19,7 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-player_df = pd.read_csv('kaggle/players.csv')
+player_df = pd.read_csv('../kaggle/players.csv')
 player_df = player_df[player_df['last_season'] >= 2023]
 player_df = player_df[player_df['current_club_domestic_competition_id'].isin(['GB1', 'ES1', 'IT1', 'L1'])] # only premier, la liga serie a and bundesliga
 player_df = player_df[player_df['position'].isin(['Midfield', 'Attack'])]
