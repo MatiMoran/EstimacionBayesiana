@@ -6,14 +6,15 @@ authors = ["a <a@a.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.13"
 matplotlib = "^3.9.2"
-numpy = "^2.1.0"
 pandas = "^2.2.2"
 requests = "^2.32.3"
 beautifulsoup4 = "^4.12.3"
 html5lib = "^1.1"
 scipy = "^1.14.1"
+arviz = "^0.20.0"
+pymc = "^5.16.2"
 
 
 [tool.poetry.group.dev.dependencies]
