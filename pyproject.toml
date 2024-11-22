@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "estimacionbayesiana"
+version = "0.1.0"
+description = ""
+authors = ["a <a@a.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+matplotlib = "^3.9.2"
+pandas = "^2.2.2"
+requests = "^2.32.3"
+beautifulsoup4 = "^4.12.3"
+html5lib = "^1.1"
+scipy = "^1.14.1"
+arviz = "^0.20.0"
+pymc = "^5.16.2"
+seaborn = "^0.13.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
