@@ -1,0 +1,47 @@
+library(bayesrules)
+library(tidyverse)
+library(rstanarm)
+library(broom.mixed)
+# Load data
+data(cherry_blossom_sample)
+running <- cherry_blossom_sample %>%
+  select(runner, age, net)
+nrow(running)
+
+
+
+ggplot(running, aes(x = runner, y = net)) +
+  geom_boxplot()
+
+head(running, 2)
+
+ggplot(running, aes(y = net, x = age)) +
+  geom_point()
+
+
+complete_pooled_model <- stan_glm(
+  net ~ age,
+  data = running, family = gaussian,
+  prior_intercept = normal(0, 2.5, autoscale = TRUE),
+  prior = normal(0, 2.5, autoscale = TRUE),
+  prior_aux = exponential(1, autoscale = TRUE),
+  chains = 4, iter = 5000*2, seed = 84735)
+
+
+# Posterior summary statistics
+tidy(complete_pooled_model, conf.int = TRUE, conf.level = 0.80)
+
+
+# Plot of the posterior median model
+ggplot(running, aes(x = age, y = net, group = runner)) +
+  geom_smooth(method = "lm", se = FALSE, color = "gray", size = 0.5) +
+  geom_abline(aes(intercept = 75.2, slope = 0.268), color = "blue")
+
+# Select an example subset
+examples <- running %>%
+  filter(runner %in% c("1", "20", "22"))
+ggplot(examples, aes(x = age, y = net)) +
+  geom_point() +
+  facet_wrap(~ runner) +
+  geom_abline(aes(intercept = 75.2242, slope = 0.2678),
+              color = "blue")
