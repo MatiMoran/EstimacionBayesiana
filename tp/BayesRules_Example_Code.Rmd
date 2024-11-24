@@ -24,6 +24,10 @@ head(running, 2)
 ```
 
 ```{r}
+
+```
+
+```{r}
 ggplot(running, aes(y = net, x = age)) +
   geom_point()
 
@@ -36,7 +40,6 @@ complete_pooled_model <- stan_glm( net ~ age, data = running, family = gaussian,
 ```{r}
 # Posterior summary statistics
 tidy(complete_pooled_model, conf.int = TRUE, conf.level = 0.80)
-
 
 ```
 
@@ -57,5 +60,4 @@ ggplot(examples, aes(x = age, y = net)) +
   facet_wrap(~ runner) +
   geom_abline(aes(intercept = 75.2242, slope = 0.2678),
               color = "blue")
-
 ```
