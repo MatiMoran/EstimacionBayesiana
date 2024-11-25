@@ -1,3 +1,9 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
 Importo archivos
 
 ```{r}
@@ -13,7 +19,11 @@ Importo nuestro dataset
 ```{r}
 #import csv from file called players_age_valuation.csv
 players_age_valuation <- read.csv("players_age_valuation.csv")
-players_age_valuation
+```
+
+```{r}
+# Print header of dataset
+head(players_age_valuation)
 
 ```
 
@@ -37,7 +47,7 @@ complete_pooled_model <- stan_glm(
   prior = normal(0, 2.5, autoscale = TRUE),           # Priors para la pendiente
   prior_aux = cauchy(0, 1),                           # Priors para sigma (Half-Cauchy)
   chains = 4, 
-  iter = 5000, seed = 84735) 
+  iter = 1000, seed = 84735) 
 ```
 
 ```{r}
@@ -48,14 +58,14 @@ tidy(complete_pooled_model, conf.int = TRUE, conf.level = 0.80)
 ```{r}
 # Plot of the posterior median model
 ggplot(players_age_valuation, aes(x = age, y = market_value_in_eur, group = player_id)) +
-  geom_smooth(method = "lm", se = FALSE, color = "gray", size = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "gray", linewidth = 0.5) +
   geom_abline(aes(intercept = 75.2, slope = 0.268), color = "blue")
 ```
 
 ```{r}
-# Select an example subset
+# Selecciono 3 jugadores randoms para comparar
 examples <- players_age_valuation %>%
-  filter(player_id %in% c("697853", "1120127", "254249"))
+  filter(player_id %in% c("697853", "1120127", "254249")) # Elijo 3 player_ids randoms
 ggplot(examples, aes(x = age, y = market_value_in_eur)) +
   geom_point() +
   facet_wrap(~ player_id) +
