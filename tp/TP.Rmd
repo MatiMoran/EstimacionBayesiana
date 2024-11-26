@@ -65,10 +65,14 @@ ggplot(players_age_valuation, aes(x = age, y = market_value_in_eur, group = play
 ```{r}
 # Selecciono 3 jugadores randoms para comparar
 examples <- players_age_valuation %>%
-  filter(player_id %in% c("697853", "1120127", "254249")) # Elijo 3 player_ids randoms
+  filter(player_id %in% c("697853", "1120127", "28003")) # Elijo 3 player_ids randoms
+
+
+
 ggplot(examples, aes(x = age, y = market_value_in_eur)) +
   geom_point() +
-  facet_wrap(~ player_id) +
-  geom_abline(aes(intercept = 75.2242, slope = 0.2678),
-              color = "blue")
+  geom_abline(aes(intercept = 75.2242, slope = 0.2678), color = "blue") +
+  facet_wrap(~ player_id, labeller = labeller(player_id = setNames(examples$name, examples$player_id)))
+
+
 ```
