@@ -1,0 +1,3 @@
+"0","ggplot(cracks, aes(x = age, y = log_market_value_in_eur)) +"
+"0","  geom_point() +"
+"0","  facet_wrap(~ player_id)"

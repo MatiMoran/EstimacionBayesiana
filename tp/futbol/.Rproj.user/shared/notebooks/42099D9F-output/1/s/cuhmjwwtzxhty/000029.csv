@@ -1,0 +1,16 @@
+"0","cracks %>%"
+"0","  filter(player_id %in% c(4360, 8883, 6893)) %>%"
+"0","  add_fitted_draws(model_1, n = 100) %>%"
+"0","  ggplot(aes(x = age, y = log_market_value_in_eur)) +"
+"0","  geom_line("
+"0","    aes(y = .value, group = paste(player_id, .draw), color = factor(player_id)),"
+"0","    alpha = 0.1) +"
+"0","  geom_point(aes(color = factor(player_id))) +"
+"0","  scale_color_manual(values = c(""4360"" = ""blue"", ""6893"" = ""red"", ""8883"" = ""darkgreen""), labels = c(""4360"" = ""Arjen Robben"", ""6893"" = ""Gabriel Tamas"", ""8883"" = 'Emmanuel Adebayor'))"
+"2","Warning: `fitted_draws` and `add_fitted_draws` are deprecated as their names were confusing.
+- Use [add_]epred_draws() to get the expectation of the posterior predictive.
+- Use [add_]linpred_draws() to get the distribution of the linear predictor.
+- For example, you used [add_]fitted_draws(..., scale = ""response""), which
+  means you most likely want [add_]epred_draws(...).
+NOTE: When updating to the new functions, note that the `model` parameter is now
+  named `object` and the `n` parameter is now named `ndraws`."
