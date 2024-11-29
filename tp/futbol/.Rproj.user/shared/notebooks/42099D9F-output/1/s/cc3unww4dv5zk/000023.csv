@@ -1,9 +1,0 @@
-"0","cracks %>%"
-"0","    add_predicted_draws(model_1, n = 100) %>%"
-"0","    ggplot(aes(x = age)) +"
-"0","    geom_density(aes(x = .prediction, group = .draw))"
-"2","Warning: 
-In add_predicted_draws(): The `n` argument is a deprecated alias for `ndraws`.
-Use the `ndraws` argument instead.
-See help(""tidybayes-deprecated"").
-"

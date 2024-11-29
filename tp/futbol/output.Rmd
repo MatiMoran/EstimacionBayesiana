@@ -1,17 +1,18 @@
 ---
 title: "TP Final Estimacion Bayesiana"
 subtitle: "Matias Moran y Matias Gangui"
-output: html_notebook
+output: pdf_document
 ---
-
-En este trabajo final vamos a utilizar tecnicas de estimacion bayesiana vistas en la materia para poder analizar y obtener informacion sobre como se comportan los precios de mercado de los jugadores de futbol a nivel internacional.
+En este trabajo final vamos a utilizar tecnicas de estimacion bayesiana vistas en la materia para poder obtener y analizar informacion sobre como se comportan los precios de mercado de los jugadores de futbol a nivel internacional.
 
 El dataset que usamos consiste del precio historico de mercado de **8572** jugadores de futbol que alguna vez jugaron algun partido en las competiciones mas importantes del mundo (UCL, Serie A, La Liga, Premier y Bundesliga).
 
 El dataset esta basado en una [recopilacion](https://www.kaggle.com/datasets/davidcariboo/player-scores) de datos de la pagina **transfermarkt** la cual contiene informacion historica de ligas, equipos y jugadores de futbol de todo el mundo.
 
+# Setup
+Importamos las librerias
 ```{r}
-# Cargamos los paquetes y el dataset
+# Cargamos los paquetes
 library(bayesrules)
 library(tidyverse)
 library(rstanarm)
@@ -19,21 +20,56 @@ library(bayesplot)
 library(tidybayes)
 library(broom.mixed)
 library(RColorBrewer)
+```
 
+Cargamos el dataset y hacemos feature engineering y reescalamos
+```{r}
+# Cargamos el dataset
 football = read.csv("players_age_valuation.csv", header = TRUE)
 
+football$player_id <- as.character(football$player_id)
+
 football <- football %>%
-  mutate(age_2 = -1/50 * age^2)
+  mutate(age_2 = age^2)
 football <- football %>% 
   mutate(log_market_value_in_eur = log(market_value_in_eur))
 
-```
 
-```{r}
 head(football)
 ```
 
+# Data Exploration
+Primero que nada vamos a ver la data de los jugadores para poder entender mejor el problema y poder armar el modelo
+
+## Distribucion de market value
 ```{r}
+
+players_stats <- football %>%
+  group_by(player_id) %>%
+  summarize(
+    max_value = max(log_market_value_in_eur, na.rm = TRUE),
+    median_value = median(log_market_value_in_eur, na.rm = TRUE),
+    mean_value = mean(log_market_value_in_eur, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  pivot_longer(cols = c(max_value, median_value, mean_value), 
+               names_to = "measure", 
+               values_to = "log_market_value")
+
+ggplot(data = players_stats, aes(x = log_market_value, fill = measure)) +
+  geom_histogram(color = "black", alpha = 0.7, position = "dodge") +
+  facet_wrap(~ measure, scales = "free", ncol = 1) +
+  ggtitle("Distribución de Valor de Mercado por Jugador (Máximo, Mediana, Promedio)") +
+  labs(x = "Log Valor de Mercado (en EUR)", y = "Frecuencia") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+Esto nos da un buen insight de que el logaritmo del valor de cada jugador se distribuye de una forma normal.
+
+
+```{r}
+set.seed(314159)
+
 players_with_history = football %>%
   filter(age %in% c(20, 35)) %>%
   group_by(player_id) %>%
@@ -43,82 +79,194 @@ players_with_history = football %>%
 
 cracks = football[football$player_id %in% head(players_with_history, 50),]
 
-ggplot(data = cracks, aes(age, market_value_in_eur, color = name)) +
-  ggtitle("Precio de mercado de jugador") +
-  geom_line() + 
-  theme(legend.position = "none")
+player_ids = c(28003, 8198, 68290, 342229)
+cracks = rbind(cracks, football[football$player_id %in% player_ids,])
 
-ggplot(data = cracks, aes(age, log_market_value_in_eur, color = name)) +
-  geom_line() +
-  theme(legend.position = "none")
+cracks_10 = football[football$player_id %in% head(players_with_history, 10),]
+
+
+ggplot(data = cracks_10, aes(age, market_value_in_eur, color = name)) +
+  ggtitle("Precio de mercado historico por jugador (N = 10)") +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme(legend.position = "none") +
+  labs(x="Edad", y="Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  lims(y = c(0,40000000))
+
+ggplot(data = cracks_10, aes(age, log_market_value_in_eur, color = name)) +
+  ggtitle("Log-Precio de mercado historico por jugador (N = 10)") +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme(legend.position = "none") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  lims(y = c(10,18))
+
+ggplot(cracks_10, aes(x = age, y = log_market_value_in_eur)) +
+  geom_point() +
+  facet_wrap(~ player_id) +
+  ggtitle("Plot de 10 jugadores distintos")
 ```
+# Modelado
+
+Dada la forma de los datos pensamos es poder predecir el logaritmo del precio de mercado de un jugador en base solamente a su edad, vamos a hacer un modelo jerarquico a nivel de jugador y vamos a tratar de modelar una relacion cuadratica y vamos a asignar a cada jugador su propio intercept y haremos que el intercept de cada jugador este normalmente distribuido como vimos en el grafico anterior.
+
+``` {r}
+set.seed(314159)
+
+quadratic_fun <- function(x, a, b, c) {
+  return(a*x^2 + b*x + c)
+}
+
+ggplot(data = cracks_10, aes(age, log_market_value_in_eur, color = name)) +
+  ggtitle("Log-Precio de mercado historico por jugador (N = 10) vs Regresion") +
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_line(data = data.frame(age = seq(min(cracks_10$age), max(cracks_10$age), length.out = 100)), 
+            aes(x = age, y = quadratic_fun(age, -0.05, 2.7, -19)), color = "black", size = 1.5) +
+  theme(legend.position = "none") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar())
+```
+Vemos la funcion cuadratica que vemos que puede llegar a aproximar bien a los datos $y = -19 + 2.7x -0.05 x^2$
+
+
+## Definicion:
+
+$$
+\text{data:} \quad Y_{{ij}}|\beta_{{0j}}, \beta_{{1}} ,\sigma_{y} \sim \mathcal{{N}}(\mu_{{ij}}, \sigma_{y}^{2}) \quad  \text{with} \quad  \mu_{{ij}} = \beta_{{0j}} + \beta_{{1}} \cdot X_{{ij}} + \beta_{{2}} \cdot X_{ij}^{2}
+$$
+
+$$
+\text{priors:} \quad \beta_{0j}|\beta_{0},\sigma_{0} \sim \mathcal{{N}}(\beta_{0}, \sigma_{0}^{{2}})
+$$
+
+$$
+\quad \quad \quad \quad \beta_{0c} \sim \mathcal{{N}}(-19, 20^2)
+$$
+
+$$
+\quad \quad \quad \sigma_{0} \sim Exp(1)
+$$
+
+$$
+\quad \quad \quad \quad \beta_{{1}} \sim \mathcal{{N}}(2.7, 5^{{2}})
+$$
+
+$$
+\quad \quad \quad \quad \beta_{{2}} \sim \mathcal{{N}}(-0.05, 0.5^{{2}})
+$$
+
+$$
+\quad \quad \quad \sigma_{y} \sim Exp(1)
+$$
+
 
 ```{r}
+set.seed(314159)
+
 model_1 <- stan_glmer(
   log_market_value_in_eur ~ age + age_2 + (1 | player_id),
   data = cracks,
   family = gaussian,
-  prior_intercept = normal(16, 3, autoscale = TRUE),
-  prior = normal(1, 1, autoscale = TRUE),
-  prior_aux = exponential(1, autoscale = TRUE),
-  prior_covariance = decov(reg = 1, conc = 1, shape = 1, scale = 1),
-  chains = 1, iter = 5000*2, seed = 31419
+  prior_intercept = normal(-19, 20, autoscale = TRUE), #prior para los diferentes intercepts
+  prior = normal(location = c(2.7, -0.05), scale = c(5, 0.5)), #prior para los coeficientes
+  prior_aux = exponential(1, autoscale = TRUE), #prior para sigma (ruido estadistico)
+  prior_covariance = decov(reg = 1, conc = 1, shape = 1, scale = 1), # sigma_mu equivalente a exp(1)
+  chains = 4, 
+  iter = 10000, 
+  seed = 314159
 )
-
-prior_summary(model_1)
 ```
 
+Vamos a ver si los priors que definimos generar modelos y datos coherentes con lo que esperamos
 ```{r}
-set.seed(31415)
+model_1_prior <- update(model_1, prior_PD = TRUE)
 
 cracks %>%
-  add_fitted_draws(model_1, n = 200) %>%
+  add_linpred_draws(model_1_prior, ndraws = 200) %>%
   ggplot(aes(x = age, y = log_market_value_in_eur)) +
-  geom_line(aes(y = .value, group = paste(player_id, .draw)), alpha = 0.15)
+  geom_line(aes(y = .linpred, group = paste(player_id, .draw)), alpha = 0.1) +
+  ggtitle("Diferentes modelos generados con el prior (N=50, S=200)") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar())
 
 cracks %>%
-  add_fitted_draws(model_1, n = 4) %>%
+  add_predicted_draws(model_1_prior, n = 4) %>%
   ggplot(aes(x = age, y=log_market_value_in_eur)) +
-  geom_line(aes(y = .value, group = paste(player_id, .draw))) +
-  facet_wrap(~ .draw)
-
-cracks %>%
-    add_predicted_draws(model_1, n = 100) %>%
-    ggplot(aes(x = age)) +
-    geom_density(aes(x = .prediction, group = .draw))
-
-ggplot(cracks, aes(x = age, y = log_market_value_in_eur)) +
-  geom_point() +
-  facet_wrap(~ player_id)
+  geom_point(aes(y = .prediction, group = .draw)) +
+  facet_wrap(~ .draw) +
+  ggtitle("Diferentes samples de la posterior para jugadores (N=50, S=4)") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar())
 ```
+
+Ahora vamos a ver los resultados de nuestro modelo
+``` {r}
+prior_summary(model_1)
+
+tidy_summary_1 <- tidy(model_1, effects = "fixed",
+                       conf.int = TRUE, conf.level = 0.80)
+tidy_summary_1
+```
+Vemos que con una confianza del 80% podemos ver que:
+el intercept promedio esta entre -7.30 y -5.80
+el coeficiente 'b' lineal de la regresion este entre 1.58 y 1.68
+el coeficiente 'a' cuadratico de la regresion este entre -0.03 y -0.029
+
+estos valores son razonables ya que son cercanos a la realidad que vemos en los datos.
+
+
+Chequeamos que las cadenas se vean bien y hacemos varios sanity checks
+vemos las trazas de las cadenas, un plot de densidad y su historial de autocorrelacion para ver que esten bien.
 ```{r}
-mcmc_trace(model_1)
-mcmc_dens_overlay(model_1)
-mcmc_acf(model_1)
+mcmc_trace(model_1, pars = c("(Intercept)","age","age_2"))
+mcmc_dens_overlay(model_1, pars = c("(Intercept)","age","age_2"))
+mcmc_acf(model_1, pars = c("(Intercept)","age","age_2"))
 neff_ratio(model_1)
 rhat(model_1)
 ```
 
 ```{r}
-
-tidy_summary_1 <- tidy(model_1, effects = "fixed",
-                       conf.int = TRUE, conf.level = 0.80)
-
-quadratic_fun <- function(x, a, b, c) {
-  return(-a*x^2/50 + b*x + c)
-}
-
+set.seed(314159)
 
 cracks %>%
-  add_fitted_draws(model_1, n = 200, re_formula = NA) %>%
+  add_linpred_draws(model_1, ndraws = 20) %>%
   ggplot(aes(x = age, y = log_market_value_in_eur)) +
-  geom_line(aes(y = .value, group = .draw), alpha = 0.1) +
+  geom_line(aes(y = .linpred, group = paste(player_id, .draw)), alpha = 0.1) +
   geom_line(data = data.frame(age = seq(min(cracks$age), max(cracks$age), length.out = 100)), 
             aes(x = age, y = quadratic_fun(age, tidy_summary_1$estimate[3],   tidy_summary_1$estimate[2], tidy_summary_1$estimate[1])), 
-            color = "blue", size = 1)
+            color = "blue", size = 1) +
+  ggtitle("Diferentes samples de la posterior para jugadores (N=50, S=20)") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar())
+
+cracks %>%
+  add_linpred_draws(model_1, ndraws = 4) %>%
+  ggplot(aes(x = age, y=log_market_value_in_eur)) +
+  geom_line(aes(y = .linpred, group = paste(player_id, .draw)), alpha = 0.5) +
+    geom_line(data = data.frame(age = seq(min(cracks$age), max(cracks$age), length.out = 100)), 
+            aes(x = age, y = quadratic_fun(age, tidy_summary_1$estimate[3],   tidy_summary_1$estimate[2], tidy_summary_1$estimate[1])), 
+            color = "blue", size = 1) +
+  facet_wrap(~ .draw) +
+  ggtitle("Diferentes samples de la posterior para jugadores (N=50, S=4)") +
+  labs(x="Edad", y="Log-Valor (EUR)") +
+  scale_y_continuous(labels = scales::label_dollar())
+```
+
+```{r}
+set.seed(314159)
+
+cracks %>%
+    add_predicted_draws(model_1, ndraws = 100) %>%
+    ggplot(aes(x = age)) +
+      geom_density(aes(x = .prediction, group = .draw), alpha = 0.3) +
+      ggtitle("Plot de densidad de las diferentes samples de la posterior (S=100)")
+
+pp_check(model_1, nreps = 50) +
+     xlab("cracks")
 
 ```
 
+Veamos los distintos intercepts para algunos jugadores
 ```{r}
 player_summaries_1 <- model_1 %>%
   spread_draws(`(Intercept)`, b[,player_id]) %>%
@@ -128,16 +276,16 @@ player_summaries_1 <- model_1 %>%
   select(player_id, player_intercept, .lower, .upper)
 
 player_summaries_1 %>%
-  filter(player_id %in% c("player_id:4360", "player_id:7767"))
+  filter(player_id %in% c("player_id:4360", "player_id:6893", "player_id:7767"))
 ```
 
 ```{r}
 cracks %>%
   filter(player_id %in% c(4360, 8883, 6893)) %>%
-  add_fitted_draws(model_1, n = 100) %>%
+  add_linpred_draws(model_1, ndraws = 100) %>%
   ggplot(aes(x = age, y = log_market_value_in_eur)) +
   geom_line(
-    aes(y = .value, group = paste(player_id, .draw), color = factor(player_id)),
+    aes(y = .linpred, group = paste(player_id, .draw), color = factor(player_id)),
     alpha = 0.1) +
   geom_point(aes(color = factor(player_id))) +
   scale_color_manual(values = c("4360" = "blue", "6893" = "red", "8883" = "darkgreen"), labels = c("4360" = "Arjen Robben", "6893" = "Gabriel Tamas", "8883" = 'Emmanuel Adebayor'))
@@ -151,6 +299,7 @@ quadratic_data <- player_summaries_1 %>%
   mutate(log_market_value_in_eur = mapply(quadratic_fun, age, tidy_summary_1$estimate[3], tidy_summary_1$estimate[2],player_intercept))
 
 ggplot(cracks, aes(x = age, y = log_market_value_in_eur)) +
+  ggtitle("Curvas de regresion para cada intercept (N=50)") +
   geom_line(data = quadratic_data,
             aes(x = age, y = log_market_value_in_eur, group = player_id),
             color = "gray",
@@ -163,6 +312,7 @@ ggplot(cracks, aes(x = age, y = log_market_value_in_eur)) +
             )
             
 ```
+
 ```{r}
 expensive_playes_ids <- player_summaries_1 %>% 
   arrange(desc(player_intercept)) %>%
@@ -177,34 +327,23 @@ cheap_player_ids <- player_summaries_1 %>%
   mutate(player_id = as.integer(sub("player_id:", "", player_id)))
 
 player_ids <- rbind(expensive_playes_ids, cheap_player_ids)$player_id
-cracks$player_id <- as.factor(cracks$player_id)
-unique_colors <- brewer.pal(length(unique(player_ids)), "Set3")
 
-# Create a named vector where each player_id corresponds to a color
-color_mapping <- setNames(unique_colors, as.character(player_ids))
+player_names <- cracks %>%
+  filter(player_id %in% player_ids) %>%
+  select(player_id, name) %>%
+  distinct()
 
 cracks %>%
   filter(player_id %in% player_ids) %>%
-  add_fitted_draws(model_1, n = 100) %>%
+  add_linpred_draws(model_1, ndraws = 100) %>%
   ggplot(aes(x = age, y = log_market_value_in_eur)) +
-  ggtitle("Regresiones para 5 los jugadores mas caros y baratos") +
-  geom_line(
-    aes(y = .value, group = paste(player_id, .draw), color = player_id),
-    alpha = 0.1) +
-  geom_point(aes(color = player_id)) +
-  scale_color_manual(values = color_mapping, 
-                     labels = function(x) {
-                       # This function modifies the labels in the legend.
-                       player_names <- cracks %>%
-                         filter(player_id %in% x) %>%
-                         distinct(player_id, name) %>%
-                         pull(name)
-                       return(player_names)
-                     }) +  # Apply the custom color mapping
-  guides(color = guide_legend(title = "Jugadores"))  # Customize legend title
+  ggtitle("Curvas con intercepts para los 5 jugadores más caros y baratos (N=50)") +
+  geom_line( aes(y = .linpred, group = paste(player_id, .draw), color = name), alpha = 0.1) + 
+  geom_point(aes(color = name)) + 
+  guides(color = guide_legend(title = "Jugadores")) +
+  theme(legend.position = "right")
 ```
-
-
+Veamos la variabilidad explicada por la diferencia entre los jugadores vs diferencias de cada jugador con el modelo
 
 ```{r}
 tidy_sigma <- tidy(model_1, effects = "ran_pars")
@@ -216,9 +355,131 @@ sigma_0^2 / (sigma_0^2 + sigma_y^2)
 sigma_y^2 / (sigma_0^2 + sigma_y^2)
 ```
 
+Vemos que la varianza de $\sigma_{0}$ es del 78% y la de $\sigma_{y}$ es del 21%, esto nos indica que hay mas variabilidad entre el precio de los jugadores que las fluctuaciones para un jugador individual
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+# Posterior Predictions
+Ahora respondamos algunas preguntas utilizando el modelo
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+## Quien es el jugador mas caro?
+Como profesionales serios que somos vamos a responder a esta pregunta utilizando usando modelos estadisticos.
+Vamos a comparar los intercepts entre varios jugadores y luego hacer predicciones, lo bueno de nuestro modelo es que
+podemos extrapolar datos ya que no todos los jugadores tienen la misma edad
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+player_ids <- expensive_playes_ids$player_id
+
+player_names <- cracks %>%
+  filter(player_id %in% player_ids) %>%
+  select(player_id, name) %>%
+  distinct()
+
+cracks %>%
+  filter(player_id %in% player_ids) %>%
+  add_linpred_draws(model_1, ndraws = 100) %>%
+  ggplot(aes(x = age, y = log_market_value_in_eur)) +
+  ggtitle("Curvas con intercepts para los 5 jugadores más caros (N=50)") +
+  geom_line( aes(y = .linpred, group = paste(player_id, .draw), color = name), alpha = 0.1) + 
+  geom_point(aes(color = name)) + 
+  guides(color = guide_legend(title = "Jugadores")) +
+  theme(legend.position = "right")
+```
+
+```{r}
+player_summaries_1 %>%
+  filter(player_id %in% sapply(expensive_playes_ids, function(x) paste0("player_id:", x)))
+```
+- Podemos estar seguros con nivel de confianza alto de que iniesta (7600) es mas barato que el resto de jugadores.
+- No podemos estar seguros con buen nivel de confianza que Mbappe(342229) es mas caro que algun otro jugador
+
+## A que edad Mbappe alcanzara su precio mas alto y cual sera ese precio?
+Para responder esta pregunta podemos simular posibles precios de mercado para Mbappe usando la posterior y viendo que valor tendra su pico.
+
+```{r}
+set.seed(314159)
+
+mbappe_pred = cracks %>%
+    filter(player_id == 342229) %>%
+    group_by(age) %>%
+    slice_max(order_by = market_value_in_eur, n = 1) %>%
+    distinct() %>%
+    select(-market_value_in_eur, -log_market_value_in_eur) %>%
+    bind_rows(
+        data.frame(
+          player_id = rep(342229, 15),
+          name = rep("Kylian Mbappé", 15),
+          age = 26:40,
+          age_2 = (26:40)^2
+        ) %>%
+      mutate(player_id = factor(player_id))
+    ) %>%
+  add_predicted_draws(model_1, ndraws = 1000)
+
+mbappe_pred %>%
+  ggplot(aes(x = age, y = .prediction)) +
+  ggtitle("Simulaciones de precio de mercado en base a la edad de Mbappe (S=1000)") +
+  geom_point(aes(y = .prediction, group = .draw))
+
+mbappe_pred %>%
+  group_by(.draw) %>%               # Group by the .draw column
+  slice_max(order_by = .prediction, n = 1) %>%
+    ggplot(aes(x = age)) +         # Map 'age' column to the x-axis
+    geom_histogram(binwidth = 1,     # Control the width of the bins
+                 fill = "blue",    # Set the color of the bars
+                 color = "black",  # Set the color of the borders of the bars
+                 alpha = 0.7) +    # Make the bars semi-transparent
+    labs(title = "Histograma de los peaks para cada prediccion de carrera (S=1000)", x = "Edad", y = "Count") + # Add title and axis labels
+    theme_minimal()   
+
+```
+```{r}
+(mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  filter(age == 26) %>%
+  nrow()) / 
+  (mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  nrow())
+```
+La probabilidad de que haga peak entre los 26 es de 16%
+
+```{r}
+(mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  filter(age %in% c(26, 27, 28)) %>%
+  nrow()) / 
+  (mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  nrow())
+```
+
+La probabilidad de que haga peak entre los 26 y los 28 es de 46%
+
+```{r}
+mbappe_pred %>%
+  group_by(.draw) %>%               # Group by the .draw column
+  slice_max(order_by = .prediction, n = 1) %>%
+    ggplot(aes(x = .prediction)) +         # Map 'age' column to the x-axis
+    geom_histogram(binwidth = 0.1,     # Control the width of the bins
+                 fill = "darkorange",    # Set the color of the bars
+                 color = "black",  # Set the color of the borders of the bars
+                 alpha = 0.7) +    # Make the bars semi-transparent
+    labs(title = "Histograma de los peaks para cada prediccion de carrera (S=1000)", x = "log-Valor mercado", y = "Count") + # Add title and axis labels
+    theme_minimal() 
+```
+
+```{r}
+(mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  filter(.prediction > 19 & .prediction < 20.5) %>%
+  nrow()) / 
+  (mbappe_pred %>%
+  group_by(.draw) %>%
+  slice_max(order_by = .prediction, n = 1) %>%
+  nrow())
+```
+Podemos estar seguros con una confianza del 75% que en su peak, Mbappe va a cotizar entre 19 y 20.5 log-EUR que transformandolos serian entre 178.482.301 y 799.902.177 EUR
