@@ -1,0 +1,78 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Importo archivos
+
+```{r}
+library(bayesrules)
+library(tidyverse)
+library(rstanarm)
+library(broom.mixed)
+library(brms)
+```
+
+Importo nuestro dataset
+
+```{r}
+#import csv from file called players_age_valuation.csv
+players_age_valuation <- read.csv("players_age_valuation.csv")
+```
+
+```{r}
+# Print header of dataset
+head(players_age_valuation)
+
+```
+
+Visualicemos un poco la data con la que trabajaremos.
+
+```{r}
+ggplot(players_age_valuation, aes(x = age, y = market_value_in_eur)) +
+geom_point() 
+```
+
+```{r}
+# Nuestros priors seran normales con media 0 y desviacion estandar de 2.5
+# Usaremos un modelo de regresion lineal con una distribucion gaussiana
+# Usaremos el metodo de muestreo de Markov Chain Monte Carlo (MCMC) para estimar los parametros del modelo
+# Usaremos 4 cadenas y 10000 iteraciones
+complete_pooled_model <- stan_glm( 
+  market_value_in_eur ~ age,      # Comparo el valor de mercado con la edad
+  data = players_age_valuation,   
+  family = gaussian,              
+  prior_intercept = normal(0, 2.5, autoscale = TRUE),  # Priors para la intersección
+  prior = normal(0, 2.5, autoscale = TRUE),           # Priors para la pendiente
+  prior_aux = cauchy(0, 1),                           # Priors para sigma (Half-Cauchy)
+  chains = 4, 
+  iter = 1000, seed = 84735) 
+```
+
+```{r}
+# Resumen del modelo
+tidy(complete_pooled_model, conf.int = TRUE, conf.level = 0.80)
+```
+
+```{r}
+# Plot of the posterior median model
+ggplot(players_age_valuation, aes(x = age, y = market_value_in_eur, group = player_id)) +
+  geom_smooth(method = "lm", se = FALSE, color = "gray", linewidth = 0.5) +
+  geom_abline(aes(intercept = 75.2, slope = 0.268), color = "blue")
+```
+
+```{r}
+# Selecciono 3 jugadores randoms para comparar
+examples <- players_age_valuation %>%
+  filter(player_id %in% c("697853", "1120127", "28003")) # Elijo 3 player_ids randoms
+
+
+
+ggplot(examples, aes(x = age, y = market_value_in_eur)) +
+  geom_point() +
+  geom_abline(aes(intercept = 75.2242, slope = 0.2678), color = "blue") +
+  facet_wrap(~ player_id, labeller = labeller(player_id = setNames(examples$name, examples$player_id)))
+
+
+```
