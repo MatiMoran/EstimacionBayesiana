@@ -1,0 +1,8 @@
+- Alicia A. Johnson, Miles Q. Ott, and Mine Dogucu, Bayes Rules! An Introduction to Applied Bayesian Modeling
+- Richard McElreath, Statistical Rethinking: A Bayesian Course with Examples in R and Stan, 2nd edition.
+- Ben Lambert, A Student’s Guide to Bayesian Statistics.
+- Osvaldo A. Martin, Ravin Kumar y Junpeng Lao, Bayesian Modeling and Computation in Python.
+- Peter D. Hoff, A first course in Bayesian statistical methods.
+- Cameron Davidson-Pilon, Bayesian methods for hackers: probabilistic programming and Bayesian inference.
+- David Robinson, Introduction to empirical bayes: examples from baseball statistics.
+- Andrew Gelman, Jennifer Hill, and Aki Vehtari, Regression and other stories.
